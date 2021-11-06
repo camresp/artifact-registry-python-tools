@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 import json
 import logging
+import os
 import subprocess
 
 class GooglePythonAuth(backend.KeyringBackend):
@@ -40,14 +41,25 @@ class GooglePythonAuth(backend.KeyringBackend):
     if url.hostname is None or not url.hostname.endswith(".pkg.dev"):
       return
 
-    #trying application default credentials otherwise fall back to gcloud credentials command
-    try:
-      CREDENTIAL_SCOPES =["https://www.googleapis.com/auth/cloud-platform"]
-      credentials, project_id = google.auth.default(scopes=CREDENTIAL_SCOPES)
-      credentials.refresh(requests.Request())
-      return credentials.token
-    except Exception as e:
-      logging.warning("Failed to retrieve Application Default Credentials: {0}".format(e))
+    attempt_adc = True
+    if bool(int(os.getenv('KEYRING_ARTIFACTREGISTRY_AUTH_SKIP_ADC', '0'))):
+      attempt_adc = False
+    elif username == 'gcloud-only':
+      attempt_adc = False
+    elif os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '') == '/dev/null':
+      attempt_adc = False
+
+    if attempt_adc:
+        #trying application default credentials otherwise fall back to gcloud credentials command
+        try:
+          CREDENTIAL_SCOPES =["https://www.googleapis.com/auth/cloud-platform"]
+          credentials, project_id = google.auth.default(scopes=CREDENTIAL_SCOPES)
+          credentials.refresh(requests.Request())
+          return credentials.token
+        except Exception as e:
+          logging.warning("Failed to retrieve Application Default Credentials: {0}".format(e))
+    else:
+      logging.debug("Skipping ADC by request")
 
     try:
       credentials = get_gcloud_credential()
